@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Environment Variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Alembic
+alembic/versions/*.pyc
+
+# Data files
+*.csv
+products.csv
+
+# Project-specific ignores
+SETUP.md
+alembic/env.py
+alembic/versions/eb78c3354b97_initial_migration.py
