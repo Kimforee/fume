@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.database import async_engine, Base
+from app.api import products, upload, tasks, webhooks
 import os
 from dotenv import load_dotenv
 
@@ -20,6 +22,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(products.router)
+app.include_router(upload.router)
+app.include_router(tasks.router)
+app.include_router(webhooks.router)
 
 
 @app.on_event("startup")
@@ -43,4 +51,13 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "error": str(exc)}
+    )
 

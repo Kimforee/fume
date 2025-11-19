@@ -70,4 +70,4 @@ products.csv
 # Project-specific ignores
 SETUP.md
 alembic/env.py
-alembic/versions/eb78c3354b97_initial_migration.py
+# Note: Migration files in alembic/versions/ should be committed to git
