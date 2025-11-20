@@ -84,12 +84,8 @@ async def upload_csv(
     import logging
     
     try:
-        # Ensure broker connection is established with SSL options
-        # This ensures the connection pool uses the correct SSL configuration
-        with celery_app.connection() as conn:
-            conn.ensure_connection(max_retries=3)
-        
-        # Use send_task which is more direct and bypasses result backend
+        # Use send_task directly - it will use the broker_transport_options from celery_app.conf
+        # The SSL options are already configured in celery_app, so send_task should use them
         result = celery_app.send_task(
             'app.tasks.csv_import.process_csv_import',
             args=(task_id, content, file.filename),
@@ -100,9 +96,6 @@ async def upload_csv(
         # If send_task fails, try the regular delay method as fallback
         logging.warning(f"send_task failed, trying delay: {str(e)}")
         try:
-            # Ensure connection before using delay
-            with celery_app.connection() as conn:
-                conn.ensure_connection(max_retries=3)
             result = process_csv_file.delay(task_id, content, file.filename)
             logging.info(f"Task enqueued via delay: {result.id}")
         except Exception as e2:

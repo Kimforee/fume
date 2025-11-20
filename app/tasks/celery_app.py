@@ -78,6 +78,13 @@ celery_app.conf.update(
     result_backend_max_retries=3,  # Limit retries for result backend
 )
 
+# Force close any existing broker connections to ensure new ones use SSL options
+# This is important because connections might be lazy-loaded before SSL options are set
+try:
+    celery_app.control.purge()  # This will close existing connections
+except Exception:
+    pass  # Ignore if no connections exist yet
+
 # Import tasks to register them
 from app.tasks import csv_import, csv_chunk_import, csv_chunk_processor  # noqa
 
