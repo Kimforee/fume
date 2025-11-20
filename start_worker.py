@@ -12,13 +12,23 @@ def main():
     # Get port from environment (Cloud Run sets this)
     port = int(os.getenv("PORT", 8080))
     
+    # Import celery_app to trigger URL conversion
+    # This ensures the converted URLs are set before Celery starts
+    from app.tasks.celery_app import celery_app, celery_broker_url, celery_result_backend
+    
+    # Set environment variables with converted URLs so Celery uses them
+    # This ensures Celery reads the correct TLS URLs
+    os.environ["CELERY_BROKER_URL"] = celery_broker_url
+    os.environ["CELERY_RESULT_BACKEND"] = celery_result_backend
+    
+    print(f"[Worker] Using broker: {celery_broker_url[:50]}...")
+    print(f"[Worker] Using backend: {celery_result_backend[:50]}...")
+    
     # Start health check server in background thread
     print(f"Starting health check server on port {port}...")
     start_health_server(port)
     
     # Start Celery worker (this will block)
-    # Use exec to replace process so signals work correctly
-    # Add broker_connection_retry_on_startup to handle connection issues
     print("Starting Celery worker...")
     celery_cmd = [
         "celery",
