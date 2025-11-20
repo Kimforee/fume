@@ -14,7 +14,11 @@ def main():
     
     # Import celery_app to trigger URL conversion
     # This ensures the converted URLs are set before Celery starts
-    from app.tasks.celery_app import celery_app, celery_broker_url, celery_result_backend
+    from app.tasks import celery_app
+    # Get the converted URLs from the module
+    import app.tasks.celery_app as celery_module
+    celery_broker_url = celery_module.celery_broker_url
+    celery_result_backend = celery_module.celery_result_backend
     
     # Set environment variables with converted URLs so Celery uses them
     # This ensures Celery reads the correct TLS URLs
