@@ -45,8 +45,6 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      - '--set-env-vars'
-      - 'PORT=8080'
 
   # Deploy worker service to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
