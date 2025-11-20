@@ -80,24 +80,25 @@ async def upload_csv(
     
     # Enqueue processing task (all heavy work happens in Celery worker)
     # This returns immediately, avoiding timeout issues
-    # Wrap in try/except to handle result backend connection issues gracefully
-    # The task will still be enqueued even if result tracking fails
+    # Use send_task directly to bypass result backend connection issues
+    from app.tasks.celery_app import celery_app
+    import logging
+    
     try:
-        process_csv_file.delay(task_id, content, file.filename)
+        # Use send_task which is more direct and bypasses some connection logic
+        celery_app.send_task(
+            'app.tasks.csv_import.process_csv_import',
+            args=(task_id, content, file.filename),
+            ignore_result=True  # We use Redis for progress tracking, not Celery results
+        )
     except Exception as e:
-        # If result backend fails, log but don't fail the request
-        # The task might still be enqueued to the broker
-        # Update progress to indicate potential issue
-        import logging
-        logging.error(f"Failed to enqueue task with result tracking: {str(e)}")
-        # Try to enqueue without result tracking by using apply_async with ignore_result
+        # If send_task fails, try the regular delay method as fallback
+        logging.warning(f"send_task failed, trying delay: {str(e)}")
         try:
-            process_csv_file.apply_async(
-                args=(task_id, content, file.filename),
-                ignore_result=True
-            )
+            process_csv_file.delay(task_id, content, file.filename)
         except Exception as e2:
-            # If this also fails, update progress to show error
+            # If both fail, update progress to show error
+            logging.error(f"Failed to enqueue task: {str(e2)}")
             error_progress = initial_progress.copy()
             error_progress["status"] = "failed"
             error_progress["message"] = f"Failed to enqueue task: {str(e2)}"
