@@ -14,15 +14,20 @@ def main():
     
     # Import celery_app to trigger URL conversion and environment variable updates
     # This ensures the converted URLs are set in os.environ before Celery starts
-    from app.tasks.celery_app import celery_app  # noqa - triggers URL conversion
+    # The import triggers the URL conversion code in celery_app.py
+    try:
+        from app.tasks.celery_app import celery_app  # noqa - triggers URL conversion
+    except Exception as e:
+        print(f"ERROR: Failed to import celery_app: {e}", file=sys.stderr)
+        sys.exit(1)
+    
     # Read the converted URLs from environment (they were set by celery_app.py)
     celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
     celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
     
-    # Set environment variables with converted URLs so Celery uses them
-    # This ensures Celery reads the correct TLS URLs
-    os.environ["CELERY_BROKER_URL"] = celery_broker_url
-    os.environ["CELERY_RESULT_BACKEND"] = celery_result_backend
+    if not celery_broker_url or not celery_result_backend:
+        print("ERROR: CELERY_BROKER_URL or CELERY_RESULT_BACKEND not set", file=sys.stderr)
+        sys.exit(1)
     
     print(f"[Worker] Using broker: {celery_broker_url[:50]}...")
     print(f"[Worker] Using backend: {celery_result_backend[:50]}...")
