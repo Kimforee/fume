@@ -76,14 +76,22 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
             celery_task_id=self.request.id
         )
         
-        # Count total rows first (for progress tracking)
-        # We'll do this by counting newlines (approximate)
-        text_preview = file_content[:10000].decode('utf-8', errors='ignore')  # Preview first 10KB
-        estimated_total = text_preview.count('\n')
-        if estimated_total < 100:
-            # If preview is small, count all
-            estimated_total = file_content.decode('utf-8', errors='ignore').count('\n')
-        estimated_total = max(estimated_total - 1, 1)  # Subtract header row
+        # Count total rows properly by parsing CSV (not just counting newlines)
+        # Some CSV rows have newlines within quoted fields, so we need to parse properly
+        import csv
+        import io
+        text_content = file_content.decode('utf-8', errors='ignore')
+        # Normalize line endings
+        text_content = text_content.replace('\r\n', '\n').replace('\r', '\n')
+        
+        # Auto-detect delimiter
+        first_line = text_content.split('\n')[0] if '\n' in text_content else text_content
+        delimiter = ',' if ',' in first_line else ('\t' if '\t' in first_line else ',')
+        
+        # Count rows by parsing CSV properly (handles quoted fields with newlines)
+        reader = csv.reader(io.StringIO(text_content), delimiter=delimiter)
+        row_count = sum(1 for row in reader)  # Count all rows including header
+        estimated_total = max(row_count - 1, 1)  # Subtract header row
         
         update_progress(
             task_id,
