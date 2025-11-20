@@ -45,6 +45,8 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'DATABASE_URL=${_DATABASE_URL},DATABASE_URL_SYNC=${_DATABASE_URL_SYNC},REDIS_URL=${_REDIS_URL},CELERY_BROKER_URL=${_REDIS_URL},CELERY_RESULT_BACKEND=${_REDIS_URL},SECRET_KEY=${_SECRET_KEY},ENVIRONMENT=production,DEBUG=False'
 
   # Deploy worker service to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -64,6 +66,8 @@ steps:
       - '0'
       - '--max-instances'
       - '10'
+      - '--set-env-vars'
+      - 'DATABASE_URL=${_DATABASE_URL},DATABASE_URL_SYNC=${_DATABASE_URL_SYNC},REDIS_URL=${_REDIS_URL},CELERY_BROKER_URL=${_REDIS_URL},CELERY_RESULT_BACKEND=${_REDIS_URL},ENVIRONMENT=production,DEBUG=False'
 
 images:
   - 'gcr.io/$PROJECT_ID/product-importer-web:$SHORT_SHA'
