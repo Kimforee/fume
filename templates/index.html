@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Importer</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <h1 class="nav-title">Product Importer</h1>
+            <ul class="nav-menu">
+                <li><a href="#" data-section="upload" class="nav-link active">Upload CSV</a></li>
+                <li><a href="#" data-section="products" class="nav-link">Products</a></li>
+                <li><a href="#" data-section="webhooks" class="nav-link">Webhooks</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Upload Section -->
+        <section id="upload-section" class="section active">
+            <h2>Upload CSV File</h2>
+            <div class="upload-container">
+                <div class="upload-area" id="upload-area">
+                    <div class="upload-content">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p class="upload-text">Drag and drop your CSV file here</p>
+                        <p class="upload-subtext">or</p>
+                        <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">Choose File</button>
+                        <input type="file" id="file-input" accept=".csv" style="display: none;">
+                    </div>
+                </div>
+                <div id="upload-progress" class="progress-container" style="display: none;">
+                    <div class="progress-header">
+                        <span id="progress-status">Processing...</span>
+                        <span id="progress-percentage">0%</span>
+                        <button class="btn btn-danger btn-sm" id="cancel-btn" onclick="cancelUpload()" style="display: none;">Stop</button>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-details" id="progress-details"></div>
+                    <div id="upload-errors" class="error-container" style="display: none;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Products Section -->
+        <section id="products-section" class="section">
+            <div class="section-header">
+                <h2>Products</h2>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="showProductModal()">Add Product</button>
+                    <button class="btn btn-danger" onclick="confirmBulkDelete()">Delete All</button>
+                </div>
+            </div>
+            
+            <div class="filters">
+                <input type="text" id="filter-sku" placeholder="Filter by SKU" class="filter-input">
+                <input type="text" id="filter-name" placeholder="Filter by Name" class="filter-input">
+                <input type="text" id="filter-description" placeholder="Filter by Description" class="filter-input">
+                <select id="filter-active" class="filter-select">
+                    <option value="">All Status</option>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                </select>
+                <button class="btn btn-secondary" onclick="loadProducts()">Apply Filters</button>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>SKU</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="products-table-body">
+                        <tr><td colspan="6" class="loading">Loading products...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination">
+                <button class="btn btn-secondary" id="prev-page" onclick="changePage(-1)">Previous</button>
+                <span id="page-info">Page 1 of 1</span>
+                <button class="btn btn-secondary" id="next-page" onclick="changePage(1)">Next</button>
+            </div>
+        </section>
+
+        <!-- Webhooks Section -->
+        <section id="webhooks-section" class="section">
+            <div class="section-header">
+                <h2>Webhooks</h2>
+                <button class="btn btn-primary" onclick="showWebhookModal()">Add Webhook</button>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>URL</th>
+                            <th>Event Types</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="webhooks-table-body">
+                        <tr><td colspan="5" class="loading">Loading webhooks...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Product Modal -->
+    <div id="product-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeProductModal()">&times;</span>
+            <h2 id="product-modal-title">Add Product</h2>
+            <form id="product-form">
+                <input type="hidden" id="product-id">
+                <div class="form-group">
+                    <label for="product-name">Name *</label>
+                    <input type="text" id="product-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="product-sku">SKU *</label>
+                    <input type="text" id="product-sku" required>
+                </div>
+                <div class="form-group">
+                    <label for="product-description">Description</label>
+                    <textarea id="product-description" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="product-active" checked> Active
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeProductModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Webhook Modal -->
+    <div id="webhook-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeWebhookModal()">&times;</span>
+            <h2 id="webhook-modal-title">Add Webhook</h2>
+            <form id="webhook-form">
+                <input type="hidden" id="webhook-id">
+                <div class="form-group">
+                    <label for="webhook-url">URL *</label>
+                    <input type="url" id="webhook-url" required>
+                </div>
+                <div class="form-group">
+                    <label>Event Types *</label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" name="event-types" value="product.created"> product.created</label>
+                        <label><input type="checkbox" name="event-types" value="product.updated"> product.updated</label>
+                        <label><input type="checkbox" name="event-types" value="product.deleted"> product.deleted</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="webhook-enabled" checked> Enabled
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeWebhookModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+

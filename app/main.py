@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
 from app.database import async_engine, Base
 from app.api import products, upload, tasks, webhooks
 import os
@@ -13,6 +15,12 @@ app = FastAPI(
     description="API for importing and managing products from CSV files",
     version="1.0.0",
 )
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Templates
+templates = Jinja2Templates(directory="templates")
 
 # CORS middleware
 app.add_middleware(
@@ -43,9 +51,9 @@ async def shutdown_event():
     await async_engine.dispose()
 
 
-@app.get("/")
-async def root():
-    return {"message": "Product Importer API", "version": "1.0.0"}
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/health")

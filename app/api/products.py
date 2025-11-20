@@ -108,7 +108,7 @@ async def create_product(product: ProductCreate, db: AsyncSession = Depends(get_
     # Trigger webhook
     await trigger_webhooks("product.created", db_product, db)
     
-    return ProductResponse.from_orm(db_product)
+    return ProductResponse.model_validate(db_product)
 
 
 @router.put("/{product_id}", response_model=ProductResponse)
@@ -151,7 +151,7 @@ async def update_product(
     # Trigger webhook
     await trigger_webhooks("product.updated", db_product, db)
     
-    return ProductResponse.from_orm(db_product)
+    return ProductResponse.model_validate(db_product)
 
 
 @router.delete("/{product_id}", status_code=204)

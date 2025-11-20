@@ -1,5 +1,5 @@
 from app.tasks.celery_app import celery_app
-from app.utils.csv_parser import parse_csv_file, validate_product_row, normalize_sku
+from app.utils.csv_parser import parse_csv_file_streaming, validate_product_row, normalize_sku
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from app.database import DATABASE_URL_SYNC, SessionLocal
@@ -16,8 +16,8 @@ load_dotenv()
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = redis.from_url(redis_url, decode_responses=True)
 
-# Batch size for database operations
-BATCH_SIZE = 1000
+# Batch size for database operations - REDUCED to prevent crashes
+BATCH_SIZE = 50
 
 
 def update_progress(task_id: str, **kwargs):
@@ -52,10 +52,10 @@ def update_progress(task_id: str, **kwargs):
     redis_client.setex(progress_key, 3600, json.dumps(progress))  # Expire after 1 hour
 
 
-@celery_app.task(bind=True, name="csv_import.process_csv_import")
+@celery_app.task(bind=True)
 def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
     """
-    Process CSV file import asynchronously.
+    Process CSV file import asynchronously using streaming to avoid memory issues.
     
     Args:
         task_id: Unique task identifier
@@ -71,25 +71,19 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
             celery_task_id=self.request.id
         )
         
-        # Parse CSV file
-        rows = parse_csv_file(file_content)
+        # Count total rows first (for progress tracking)
+        # We'll do this by counting newlines (approximate)
+        text_preview = file_content[:10000].decode('utf-8', errors='ignore')  # Preview first 10KB
+        estimated_total = text_preview.count('\n')
+        if estimated_total < 100:
+            # If preview is small, count all
+            estimated_total = file_content.decode('utf-8', errors='ignore').count('\n')
+        estimated_total = max(estimated_total - 1, 1)  # Subtract header row
         
-        if not rows:
-            update_progress(
-                task_id,
-                status="failed",
-                message="No valid rows found in CSV file",
-                total_rows=0,
-                progress=100.0,
-                completed_at=datetime.utcnow().isoformat()
-            )
-            return {"success": False, "message": "No valid rows found"}
-        
-        total_rows = len(rows)
         update_progress(
             task_id,
-            total_rows=total_rows,
-            message=f"Processing {total_rows} rows..."
+            total_rows=estimated_total,
+            message=f"Processing approximately {estimated_total} rows..."
         )
         
         # Create database session (sync for Celery)
@@ -101,9 +95,17 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
             failed_rows = 0
             errors = []
             batch = []
+            actual_total = 0
             
-            # Process rows in batches
-            for row_data in rows:
+            # Process rows using streaming generator (memory efficient)
+            for row_data in parse_csv_file_streaming(file_content):
+                actual_total += 1
+                
+                # Update total if we underestimated
+                if actual_total > estimated_total:
+                    estimated_total = actual_total
+                    update_progress(task_id, total_rows=estimated_total)
+                
                 try:
                     # Validate row
                     is_valid, error_msg = validate_product_row(row_data)
@@ -140,7 +142,7 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                     
                     successful_rows += 1
                     
-                    # Commit batch when it reaches BATCH_SIZE
+                    # Commit batch when it reaches BATCH_SIZE (reduced to 50)
                     if len(batch) >= BATCH_SIZE:
                         db.add_all(batch)
                         db.commit()
@@ -148,15 +150,16 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                     
                     processed_rows += 1
                     
-                    # Update progress every 100 rows
-                    if processed_rows % 100 == 0:
+                    # Update progress every 50 rows (more frequent updates)
+                    if processed_rows % 50 == 0:
                         update_progress(
                             task_id,
                             processed_rows=processed_rows,
                             successful_rows=successful_rows,
                             failed_rows=failed_rows,
+                            total_rows=estimated_total,
                             errors=errors[-10:] if errors else [],  # Keep last 10 errors
-                            message=f"Processed {processed_rows}/{total_rows} rows..."
+                            message=f"Processed {processed_rows}/{estimated_total} rows..."
                         )
                 
                 except Exception as e:
@@ -165,6 +168,10 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                     errors.append(error_msg)
                     processed_rows += 1
                     continue
+            
+            # Update final total
+            if actual_total != estimated_total:
+                update_progress(task_id, total_rows=actual_total)
             
             # Commit remaining batch
             if batch:
@@ -178,6 +185,7 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                 processed_rows=processed_rows,
                 successful_rows=successful_rows,
                 failed_rows=failed_rows,
+                total_rows=actual_total,
                 errors=errors[-20:] if errors else [],  # Keep last 20 errors
                 message=f"Import completed. {successful_rows} successful, {failed_rows} failed.",
                 progress=100.0,
@@ -186,7 +194,7 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
             
             return {
                 "success": True,
-                "total_rows": total_rows,
+                "total_rows": actual_total,
                 "successful_rows": successful_rows,
                 "failed_rows": failed_rows,
                 "errors": errors[-20:] if errors else []
@@ -206,4 +214,3 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
             errors=[str(e)]
         )
         raise
-

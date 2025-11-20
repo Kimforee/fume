@@ -27,3 +27,6 @@ celery_app.conf.update(
     worker_max_tasks_per_child=1000,
 )
 
+# Import tasks to register them
+from app.tasks import csv_import, csv_chunk_import  # noqa
+
