@@ -155,8 +155,11 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                     
                     processed_rows += 1
                     
-                    # Update progress every 50 rows (more frequent updates)
-                    if processed_rows % 50 == 0:
+                    # Update progress more frequently for better UX
+                    # For small files (< 100 rows), update every row
+                    # For larger files, update every 10 rows
+                    update_interval = 1 if estimated_total < 100 else 10
+                    if processed_rows % update_interval == 0 or processed_rows == actual_total:
                         update_progress(
                             task_id,
                             processed_rows=processed_rows,
