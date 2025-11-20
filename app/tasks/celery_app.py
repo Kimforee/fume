@@ -39,12 +39,14 @@ result_backend_transport_options = {}
 
 # Configure SSL for Upstash Redis
 # CERT_NONE means don't verify the certificate (needed for Upstash's self-signed certs)
+# Kombu requires these options to be set correctly for rediss:// URLs
 if "upstash.io" in celery_broker_url:
     broker_transport_options = {
         'ssl_cert_reqs': CERT_NONE,  # Upstash uses self-signed certs, don't verify
         'ssl_ca_certs': None,
         'ssl_certfile': None,
         'ssl_keyfile': None,
+        'health_check_interval': 30,  # Check connection health
     }
 
 if "upstash.io" in celery_result_backend:
@@ -54,6 +56,14 @@ if "upstash.io" in celery_result_backend:
         'ssl_certfile': None,
         'ssl_keyfile': None,
     }
+    
+    # Also set result backend transport options in the URL format
+    # This ensures Kombu picks up the SSL settings
+    if celery_result_backend.startswith("rediss://"):
+        # Add SSL parameters to the URL if not already present
+        if "ssl_cert_reqs" not in celery_result_backend:
+            separator = "&" if "?" in celery_result_backend else "?"
+            celery_result_backend = f"{celery_result_backend}{separator}ssl_cert_reqs=none"
 
 celery_app.conf.update(
     broker_url=celery_broker_url,  # Explicitly set the converted URL
