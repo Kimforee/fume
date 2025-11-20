@@ -11,12 +11,17 @@ celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:63
 
 # Upstash Redis requires TLS - convert redis:// to rediss://
 # Also remove any trailing slashes or database numbers that might cause issues
+# Add SSL parameters to URL for Kombu compatibility
 if celery_broker_url and "upstash.io" in celery_broker_url:
     # Remove trailing slashes and database numbers
     celery_broker_url = celery_broker_url.rstrip('/').rstrip('/0').rstrip('/1').rstrip('/2')
     # Convert to TLS
     if celery_broker_url.startswith("redis://"):
         celery_broker_url = celery_broker_url.replace("redis://", "rediss://", 1)
+    # Add SSL parameters to URL - Kombu needs this for proper SSL handling
+    if "ssl_cert_reqs" not in celery_broker_url:
+        separator = "&" if "?" in celery_broker_url else "?"
+        celery_broker_url = f"{celery_broker_url}{separator}ssl_cert_reqs=none"
     print(f"[Celery] Broker URL converted to: {celery_broker_url[:50]}...")
 
 if celery_result_backend and "upstash.io" in celery_result_backend:
@@ -25,6 +30,10 @@ if celery_result_backend and "upstash.io" in celery_result_backend:
     # Convert to TLS
     if celery_result_backend.startswith("redis://"):
         celery_result_backend = celery_result_backend.replace("redis://", "rediss://", 1)
+    # Add SSL parameters to URL - Kombu needs this for proper SSL handling
+    if "ssl_cert_reqs" not in celery_result_backend:
+        separator = "&" if "?" in celery_result_backend else "?"
+        celery_result_backend = f"{celery_result_backend}{separator}ssl_cert_reqs=none"
     print(f"[Celery] Result backend converted to: {celery_result_backend[:50]}...")
 
 # Create Celery app with converted URLs
@@ -78,12 +87,9 @@ celery_app.conf.update(
     result_backend_max_retries=3,  # Limit retries for result backend
 )
 
-# Force close any existing broker connections to ensure new ones use SSL options
-# This is important because connections might be lazy-loaded before SSL options are set
-try:
-    celery_app.control.purge()  # This will close existing connections
-except Exception:
-    pass  # Ignore if no connections exist yet
+# Note: broker_transport_options are set in conf.update() above
+# These will be used automatically when connections are established
+# No need to purge - connections are lazy-loaded and will use the SSL options
 
 # Import tasks to register them
 from app.tasks import csv_import, csv_chunk_import, csv_chunk_processor  # noqa

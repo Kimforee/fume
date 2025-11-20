@@ -42,10 +42,17 @@ def main():
     ]
     
     # Run Celery worker - it will retry connections automatically
-    # Don't exit on failure, let Cloud Run handle restarts
-    result = subprocess.run(celery_cmd)
+    # Capture stderr to see what's causing the crash
+    result = subprocess.run(
+        celery_cmd,
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True
+    )
     if result.returncode != 0:
         print(f"Celery worker exited with code {result.returncode}")
+        print("STDOUT:", result.stdout[-500:] if result.stdout else "(empty)")
+        print("STDERR:", result.stderr[-500:] if result.stderr else "(empty)")
         # Sleep a bit before exiting to allow health check to respond
         import time
         time.sleep(5)
