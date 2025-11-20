@@ -135,8 +135,8 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                         failed_rows += 1
                         errors.append(f"Row {row_data['row_number']}: {error_msg}")
                         processed_rows += 1
-                        # Update progress immediately for small files
-                        if estimated_total < 100:
+                        # Update progress periodically (not every row to avoid Redis overhead)
+                        if processed_rows % 5 == 0 or processed_rows == estimated_total:
                             update_progress(
                                 task_id,
                                 processed_rows=processed_rows,
@@ -185,10 +185,10 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                         db.commit()  # Updates are already tracked by SQLAlchemy
                         to_update = []
                     
-                    # Update progress more frequently for better UX
-                    # For small files (< 100 rows), update every row
-                    # For larger files, update every 10 rows
-                    update_interval = 1 if estimated_total < 100 else 10
+                    # Update progress efficiently - don't update every row for small files
+                    # Update every 5 rows for small files, every 10 for larger files
+                    # This reduces Redis writes and improves performance
+                    update_interval = 5 if estimated_total < 100 else 10
                     if processed_rows % update_interval == 0 or processed_rows == actual_total:
                         update_progress(
                             task_id,
@@ -205,8 +205,8 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                     error_msg = f"Row {row_data.get('row_number', 'unknown')}: {str(e)}"
                     errors.append(error_msg)
                     processed_rows += 1
-                    # Update progress immediately for small files
-                    if estimated_total < 100:
+                    # Update progress periodically (not every row to avoid Redis overhead)
+                    if processed_rows % 5 == 0 or processed_rows == estimated_total:
                         update_progress(
                             task_id,
                             processed_rows=processed_rows,
