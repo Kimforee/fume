@@ -19,9 +19,10 @@ if celery_broker_url and "upstash.io" in celery_broker_url:
     if celery_broker_url.startswith("redis://"):
         celery_broker_url = celery_broker_url.replace("redis://", "rediss://", 1)
     # Add SSL parameters to URL - Kombu needs this for proper SSL handling
+    # Use numeric value 0 (CERT_NONE) instead of 'none' string
     if "ssl_cert_reqs" not in celery_broker_url:
         separator = "&" if "?" in celery_broker_url else "?"
-        celery_broker_url = f"{celery_broker_url}{separator}ssl_cert_reqs=none"
+        celery_broker_url = f"{celery_broker_url}{separator}ssl_cert_reqs=0"
     print(f"[Celery] Broker URL converted to: {celery_broker_url[:50]}...")
 
 if celery_result_backend and "upstash.io" in celery_result_backend:
@@ -31,9 +32,10 @@ if celery_result_backend and "upstash.io" in celery_result_backend:
     if celery_result_backend.startswith("redis://"):
         celery_result_backend = celery_result_backend.replace("redis://", "rediss://", 1)
     # Add SSL parameters to URL - Kombu needs this for proper SSL handling
+    # Use numeric value 0 (CERT_NONE) instead of 'none' string
     if "ssl_cert_reqs" not in celery_result_backend:
         separator = "&" if "?" in celery_result_backend else "?"
-        celery_result_backend = f"{celery_result_backend}{separator}ssl_cert_reqs=none"
+        celery_result_backend = f"{celery_result_backend}{separator}ssl_cert_reqs=0"
     print(f"[Celery] Result backend converted to: {celery_result_backend[:50]}...")
 
 # Create Celery app with converted URLs
