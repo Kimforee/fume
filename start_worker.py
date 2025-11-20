@@ -12,11 +12,12 @@ def main():
     # Get port from environment (Cloud Run sets this)
     port = int(os.getenv("PORT", 8080))
     
-    # Import celery_app to trigger URL conversion
+    # Import celery_app module to trigger URL conversion
     # This ensures the converted URLs are set before Celery starts
-    from app.tasks import celery_app
-    # Get the converted URLs from the module
     import app.tasks.celery_app as celery_module
+    # Import the app to ensure it's initialized
+    from app.tasks.celery_app import celery_app  # noqa
+    # Get the converted URLs from the module (not the app object)
     celery_broker_url = celery_module.celery_broker_url
     celery_result_backend = celery_module.celery_result_backend
     
