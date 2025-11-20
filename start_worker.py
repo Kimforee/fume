@@ -12,14 +12,12 @@ def main():
     # Get port from environment (Cloud Run sets this)
     port = int(os.getenv("PORT", 8080))
     
-    # Import celery_app module to trigger URL conversion
-    # This ensures the converted URLs are set before Celery starts
-    import app.tasks.celery_app as celery_module
-    # Import the app to ensure it's initialized
-    from app.tasks.celery_app import celery_app  # noqa
-    # Get the converted URLs from the module (not the app object)
-    celery_broker_url = celery_module.celery_broker_url
-    celery_result_backend = celery_module.celery_result_backend
+    # Import celery_app to trigger URL conversion and environment variable updates
+    # This ensures the converted URLs are set in os.environ before Celery starts
+    from app.tasks.celery_app import celery_app  # noqa - triggers URL conversion
+    # Read the converted URLs from environment (they were set by celery_app.py)
+    celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
     
     # Set environment variables with converted URLs so Celery uses them
     # This ensures Celery reads the correct TLS URLs
