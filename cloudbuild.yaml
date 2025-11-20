@@ -70,8 +70,3 @@ steps:
 images:
   - 'gcr.io/$PROJECT_ID/product-importer-web:$SHORT_SHA'
   - 'gcr.io/$PROJECT_ID/product-importer-worker:$SHORT_SHA'
-
-options:
-  logging: CLOUD_LOGGING_ONLY
-
-# Build configuration
