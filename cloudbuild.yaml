@@ -1,0 +1,76 @@
+steps:
+  # Build the web application Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/product-importer-web:$SHORT_SHA'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+
+  # Build the worker Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/product-importer-worker:$SHORT_SHA'
+      - '-f'
+      - 'Dockerfile.worker'
+      - '.'
+
+  # Push web image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/product-importer-web:$SHORT_SHA'
+
+  # Push worker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/product-importer-worker:$SHORT_SHA'
+
+  # Deploy web service to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'product-importer-web'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/product-importer-web:$SHORT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'PORT=8080'
+
+  # Deploy worker service to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'product-importer-worker'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/product-importer-worker:$SHORT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--no-allow-unauthenticated'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '10'
+
+images:
+  - 'gcr.io/$PROJECT_ID/product-importer-web:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/product-importer-worker:$SHORT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+

@@ -71,3 +71,8 @@ products.csv
 SETUP.md
 alembic/env.py
 # Note: Migration files in alembic/versions/ should be committed to git
+
+# Deployment documentation (keep outside repository)
+GCP_DEPLOYMENT.md
+HEROKU_DEPLOYMENT.md
+INSTALL_HEROKU_CLI.md

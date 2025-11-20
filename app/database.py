@@ -12,10 +12,15 @@ load_dotenv()
 def clean_asyncpg_url(url: str) -> tuple[str, dict]:
     """
     Clean database URL for asyncpg compatibility.
-    Removes ALL query params (asyncpg doesn't support most psycopg2-style params)
-    and converts sslmode to connect_args format.
+    Converts postgresql:// to postgresql+asyncpg://, removes ALL query params
+    (asyncpg doesn't support most psycopg2-style params), and converts sslmode
+    to connect_args format.
     Returns (cleaned_url, connect_args_dict)
     """
+    # Handle Heroku's DATABASE_URL format (postgresql://) by converting to asyncpg format
+    if url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    
     if not url.startswith("postgresql+asyncpg://"):
         return url, {}
     
@@ -35,6 +40,14 @@ def clean_asyncpg_url(url: str) -> tuple[str, dict]:
         else:
             # For require, prefer, allow, or any other mode, enable SSL
             connect_args['ssl'] = True
+    else:
+        # Cloud SQL and Heroku PostgreSQL require SSL, so enable it by default if no sslmode specified
+        # Check if this looks like a Cloud SQL URL (contains .gcp or sql.googleapis.com) or Heroku URL
+        hostname = parsed.hostname or ''
+        if ('.gcp' in hostname or 'sql.googleapis.com' in hostname or 
+            '.amazonaws.com' in hostname or '.herokuapp.com' in hostname or 
+            os.getenv('DYNO') or os.getenv('GOOGLE_CLOUD_PROJECT')):
+            connect_args['ssl'] = True
     
     # Remove ALL query parameters - asyncpg doesn't support them in the URL
     # Rebuild URL without any query params
@@ -44,11 +57,21 @@ def clean_asyncpg_url(url: str) -> tuple[str, dict]:
     return cleaned_url, connect_args
 
 # Async database URL for FastAPI
+# Cloud SQL and Heroku provide DATABASE_URL as postgresql://, we convert it to postgresql+asyncpg://
 raw_database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/product_importer")
 DATABASE_URL, asyncpg_connect_args = clean_asyncpg_url(raw_database_url)
 
 # Sync database URL for Alembic migrations
-DATABASE_URL_SYNC = os.getenv("DATABASE_URL_SYNC", "postgresql://user:password@localhost:5432/product_importer")
+# If DATABASE_URL_SYNC is not set, derive it from DATABASE_URL (for Cloud SQL and Heroku compatibility)
+DATABASE_URL_SYNC = os.getenv("DATABASE_URL_SYNC")
+if not DATABASE_URL_SYNC:
+    # Convert asyncpg URL back to standard postgresql:// for sync operations
+    if raw_database_url.startswith("postgresql+asyncpg://"):
+        DATABASE_URL_SYNC = raw_database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    elif raw_database_url.startswith("postgresql://"):
+        DATABASE_URL_SYNC = raw_database_url
+    else:
+        DATABASE_URL_SYNC = "postgresql://user:password@localhost:5432/product_importer"
 
 # Async engine for FastAPI
 async_engine = create_async_engine(
