@@ -18,11 +18,8 @@ if celery_broker_url and "upstash.io" in celery_broker_url:
     # Convert to TLS
     if celery_broker_url.startswith("redis://"):
         celery_broker_url = celery_broker_url.replace("redis://", "rediss://", 1)
-    # Add SSL parameters to URL - Kombu needs this for proper SSL handling
-    # Use numeric value 0 (CERT_NONE) instead of 'none' string
-    if "ssl_cert_reqs" not in celery_broker_url:
-        separator = "&" if "?" in celery_broker_url else "?"
-        celery_broker_url = f"{celery_broker_url}{separator}ssl_cert_reqs=0"
+    # Don't add ssl_cert_reqs to URL - redis-py doesn't parse it correctly
+    # SSL options will be set via broker_transport_options instead
     print(f"[Celery] Broker URL converted to: {celery_broker_url[:50]}...")
 
 if celery_result_backend and "upstash.io" in celery_result_backend:
@@ -31,11 +28,8 @@ if celery_result_backend and "upstash.io" in celery_result_backend:
     # Convert to TLS
     if celery_result_backend.startswith("redis://"):
         celery_result_backend = celery_result_backend.replace("redis://", "rediss://", 1)
-    # Add SSL parameters to URL - Kombu needs this for proper SSL handling
-    # Use numeric value 0 (CERT_NONE) instead of 'none' string
-    if "ssl_cert_reqs" not in celery_result_backend:
-        separator = "&" if "?" in celery_result_backend else "?"
-        celery_result_backend = f"{celery_result_backend}{separator}ssl_cert_reqs=0"
+    # Don't add ssl_cert_reqs to URL - redis-py doesn't parse it correctly
+    # SSL options will be set via result_backend_transport_options instead
     print(f"[Celery] Result backend converted to: {celery_result_backend[:50]}...")
 
 # Create Celery app with converted URLs
@@ -60,13 +54,6 @@ if "upstash.io" in celery_broker_url:
         'ssl_certfile': None,
         'ssl_keyfile': None,
         'health_check_interval': 30,  # Check connection health
-        # Additional options for Kombu Redis transport
-        'connection_pool_kwargs': {
-            'ssl_cert_reqs': CERT_NONE,
-            'ssl_ca_certs': None,
-            'ssl_certfile': None,
-            'ssl_keyfile': None,
-        },
     }
 
 if "upstash.io" in celery_result_backend:
@@ -75,13 +62,6 @@ if "upstash.io" in celery_result_backend:
         'ssl_ca_certs': None,
         'ssl_certfile': None,
         'ssl_keyfile': None,
-        # Additional options for Kombu Redis transport
-        'connection_pool_kwargs': {
-            'ssl_cert_reqs': CERT_NONE,
-            'ssl_ca_certs': None,
-            'ssl_certfile': None,
-            'ssl_keyfile': None,
-        },
     }
 
 # Update configuration with SSL options
