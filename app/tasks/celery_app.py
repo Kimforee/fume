@@ -1,6 +1,7 @@
 from celery import Celery
 import os
 from dotenv import load_dotenv
+from ssl import CERT_NONE
 
 load_dotenv()
 
@@ -37,9 +38,10 @@ broker_transport_options = {}
 result_backend_transport_options = {}
 
 # Configure SSL for Upstash Redis
+# CERT_NONE means don't verify the certificate (needed for Upstash's self-signed certs)
 if "upstash.io" in celery_broker_url:
     broker_transport_options = {
-        'ssl_cert_reqs': None,  # Upstash uses self-signed certs
+        'ssl_cert_reqs': CERT_NONE,  # Upstash uses self-signed certs, don't verify
         'ssl_ca_certs': None,
         'ssl_certfile': None,
         'ssl_keyfile': None,
@@ -47,7 +49,7 @@ if "upstash.io" in celery_broker_url:
 
 if "upstash.io" in celery_result_backend:
     result_backend_transport_options = {
-        'ssl_cert_reqs': None,  # Upstash uses self-signed certs
+        'ssl_cert_reqs': CERT_NONE,  # Upstash uses self-signed certs, don't verify
         'ssl_ca_certs': None,
         'ssl_certfile': None,
         'ssl_keyfile': None,
