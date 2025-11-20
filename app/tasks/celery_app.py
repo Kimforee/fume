@@ -9,11 +9,22 @@ celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
 # Upstash Redis requires TLS - convert redis:// to rediss://
-if celery_broker_url.startswith("redis://") and "upstash.io" in celery_broker_url:
-    celery_broker_url = celery_broker_url.replace("redis://", "rediss://", 1)
+# Also remove any trailing slashes or database numbers that might cause issues
+if celery_broker_url and "upstash.io" in celery_broker_url:
+    # Remove trailing slashes and database numbers
+    celery_broker_url = celery_broker_url.rstrip('/').rstrip('/0').rstrip('/1').rstrip('/2')
+    # Convert to TLS
+    if celery_broker_url.startswith("redis://"):
+        celery_broker_url = celery_broker_url.replace("redis://", "rediss://", 1)
+    print(f"[Celery] Broker URL converted to: {celery_broker_url[:50]}...")
 
-if celery_result_backend.startswith("redis://") and "upstash.io" in celery_result_backend:
-    celery_result_backend = celery_result_backend.replace("redis://", "rediss://", 1)
+if celery_result_backend and "upstash.io" in celery_result_backend:
+    # Remove trailing slashes and database numbers
+    celery_result_backend = celery_result_backend.rstrip('/').rstrip('/0').rstrip('/1').rstrip('/2')
+    # Convert to TLS
+    if celery_result_backend.startswith("redis://"):
+        celery_result_backend = celery_result_backend.replace("redis://", "rediss://", 1)
+    print(f"[Celery] Result backend converted to: {celery_result_backend[:50]}...")
 
 celery_app = Celery(
     "product_importer",
