@@ -28,5 +28,5 @@ celery_app.conf.update(
 )
 
 # Import tasks to register them
-from app.tasks import csv_import, csv_chunk_import  # noqa
+from app.tasks import csv_import, csv_chunk_import, csv_chunk_processor  # noqa
 
