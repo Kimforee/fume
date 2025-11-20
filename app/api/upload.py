@@ -80,22 +80,31 @@ async def upload_csv(
     
     # Enqueue processing task (all heavy work happens in Celery worker)
     # This returns immediately, avoiding timeout issues
-    # Use send_task directly to bypass result backend connection issues
     from app.tasks.celery_app import celery_app
     import logging
     
     try:
-        # Use send_task which is more direct and bypasses some connection logic
-        celery_app.send_task(
+        # Ensure broker connection is established with SSL options
+        # This ensures the connection pool uses the correct SSL configuration
+        with celery_app.connection() as conn:
+            conn.ensure_connection(max_retries=3)
+        
+        # Use send_task which is more direct and bypasses result backend
+        result = celery_app.send_task(
             'app.tasks.csv_import.process_csv_import',
             args=(task_id, content, file.filename),
             ignore_result=True  # We use Redis for progress tracking, not Celery results
         )
+        logging.info(f"Task enqueued successfully: {result.id}")
     except Exception as e:
         # If send_task fails, try the regular delay method as fallback
         logging.warning(f"send_task failed, trying delay: {str(e)}")
         try:
-            process_csv_file.delay(task_id, content, file.filename)
+            # Ensure connection before using delay
+            with celery_app.connection() as conn:
+                conn.ensure_connection(max_retries=3)
+            result = process_csv_file.delay(task_id, content, file.filename)
+            logging.info(f"Task enqueued via delay: {result.id}")
         except Exception as e2:
             # If both fail, update progress to show error
             logging.error(f"Failed to enqueue task: {str(e2)}")

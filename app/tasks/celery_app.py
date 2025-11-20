@@ -27,6 +27,7 @@ if celery_result_backend and "upstash.io" in celery_result_backend:
         celery_result_backend = celery_result_backend.replace("redis://", "rediss://", 1)
     print(f"[Celery] Result backend converted to: {celery_result_backend[:50]}...")
 
+# Create Celery app with converted URLs
 celery_app = Celery(
     "product_importer",
     broker=celery_broker_url,
@@ -56,15 +57,8 @@ if "upstash.io" in celery_result_backend:
         'ssl_certfile': None,
         'ssl_keyfile': None,
     }
-    
-    # Also set result backend transport options in the URL format
-    # This ensures Kombu picks up the SSL settings
-    if celery_result_backend.startswith("rediss://"):
-        # Add SSL parameters to the URL if not already present
-        if "ssl_cert_reqs" not in celery_result_backend:
-            separator = "&" if "?" in celery_result_backend else "?"
-            celery_result_backend = f"{celery_result_backend}{separator}ssl_cert_reqs=none"
 
+# Update configuration with SSL options
 celery_app.conf.update(
     broker_url=celery_broker_url,  # Explicitly set the converted URL
     result_backend=celery_result_backend,  # Explicitly set the converted URL
