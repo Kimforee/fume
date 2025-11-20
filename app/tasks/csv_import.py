@@ -22,7 +22,7 @@ if redis_url and "upstash.io" in redis_url:
 redis_client = redis.from_url(redis_url, decode_responses=True, ssl_cert_reqs=None)
 
 # Batch size for database operations
-BATCH_SIZE = 20  # Smaller batches = more frequent commits and progress updates
+BATCH_SIZE = 50  # Larger batches = fewer commits = better performance
 
 
 def update_progress(task_id: str, **kwargs):
