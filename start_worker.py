@@ -29,7 +29,12 @@ def main():
     
     # Start health check server in background thread
     print(f"Starting health check server on port {port}...")
-    start_health_server(port)
+    server = start_health_server(port)
+    
+    # Give health server a moment to start listening
+    import time
+    time.sleep(1)
+    print(f"Health check server started on port {port}")
     
     # Start Celery worker (this will block)
     print("Starting Celery worker...")

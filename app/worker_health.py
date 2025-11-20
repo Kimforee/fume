@@ -3,6 +3,7 @@ Simple HTTP server for Cloud Run health checks.
 Runs alongside Celery worker to satisfy Cloud Run's port requirement.
 """
 import os
+import sys
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
@@ -33,8 +34,13 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 def start_health_server(port=8080):
     """Start HTTP health check server in a separate thread."""
-    server = ThreadingHTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return server
+    try:
+        server = ThreadingHTTPServer(('0.0.0.0', port), HealthCheckHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        print(f"Health server thread started, listening on 0.0.0.0:{port}")
+        return server
+    except Exception as e:
+        print(f"ERROR: Failed to start health server: {e}", file=sys.stderr)
+        raise
 
