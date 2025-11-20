@@ -1,10 +1,12 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.schemas import UploadResponse
 from app.tasks.csv_chunk_processor import process_csv_file
+from app.tasks.csv_import import process_csv_import_inline, count_csv_rows
 import os
 import uuid
 import redis
 import json
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -14,6 +16,9 @@ router = APIRouter(prefix="/api/upload", tags=["upload"])
 
 # Maximum file size: 500MB
 MAX_FILE_SIZE = 500 * 1024 * 1024
+
+# Threshold under which we process synchronously (bypass Celery)
+INLINE_ROW_THRESHOLD = int(os.getenv("INLINE_ROW_THRESHOLD", "100"))
 
 
 @router.post("", response_model=UploadResponse, status_code=202)
@@ -55,6 +60,13 @@ async def upload_csv(
     # Generate task ID
     task_id = str(uuid.uuid4())
     
+    # Pre-count rows (stop early once threshold is exceeded)
+    detected_rows = None
+    try:
+        detected_rows = count_csv_rows(content, stop_after=INLINE_ROW_THRESHOLD)
+    except Exception as e:
+        logging.warning(f"Failed to pre-count CSV rows: {e}")
+    
     # Store initial progress in Redis
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     # Convert to TLS for Upstash
@@ -76,12 +88,28 @@ async def upload_csv(
         "created_at": datetime.utcnow().isoformat(),
         "message": "File uploaded. Starting processing..."
     }
+    if detected_rows is not None:
+        initial_progress["total_rows"] = detected_rows
     redis_client.setex(progress_key, 3600, json.dumps(initial_progress))
+    
+    # For small files, process inline to avoid queue overhead
+    if detected_rows is not None and detected_rows <= INLINE_ROW_THRESHOLD:
+        logging.info(
+            "Processing task %s inline (rows=%s <= threshold=%s)",
+            task_id,
+            detected_rows,
+            INLINE_ROW_THRESHOLD,
+        )
+        process_csv_import_inline(task_id, content, file.filename)
+        return UploadResponse(
+            task_id=task_id,
+            message="File processed instantly (inline).",
+            filename=file.filename
+        )
     
     # Enqueue processing task (all heavy work happens in Celery worker)
     # This returns immediately, avoiding timeout issues
     from app.tasks.celery_app import celery_app
-    import logging
     
     try:
         # Use send_task - it should use the broker_transport_options from celery_app.conf

@@ -7,6 +7,8 @@ from app.models.product import Product
 import redis
 import os
 import json
+import csv
+import io
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -57,57 +59,50 @@ def update_progress(task_id: str, **kwargs):
     redis_client.setex(progress_key, 3600, json.dumps(progress))  # Expire after 1 hour
 
 
-@celery_app.task(bind=True, ignore_result=True)
-def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
+def count_csv_rows(file_content: bytes, stop_after: int | None = None) -> int:
     """
-    Process CSV file import asynchronously using streaming to avoid memory issues.
+    Count CSV data rows (excluding header). If stop_after is provided, stop counting
+    once the number of data rows exceeds the threshold (useful for inline processing checks).
+    """
+    text_content = file_content.decode('utf-8', errors='ignore')
+    text_content = text_content.replace('\r\n', '\n').replace('\r', '\n')
     
-    Args:
-        task_id: Unique task identifier
-        file_content: CSV file content as bytes
-        filename: Original filename
+    first_line = text_content.split('\n')[0] if '\n' in text_content else text_content
+    delimiter = ',' if ',' in first_line else ('\t' if '\t' in first_line else ',')
+    
+    reader = csv.reader(io.StringIO(text_content), delimiter=delimiter)
+    row_count = 0
+    for _ in reader:
+        row_count += 1
+        if stop_after is not None and (row_count - 1) >= stop_after:
+            break
+    data_rows = max(row_count - 1, 0)
+    return data_rows
+
+
+def _process_csv_import_core(task_id: str, file_content: bytes, filename: str, celery_task_id: str | None = None):
+    """
+    Core CSV import logic shared by both Celery task and inline processing.
     """
     try:
-        # Initialize progress
         update_progress(
             task_id,
             status="processing",
             message="Parsing CSV file...",
-            celery_task_id=self.request.id
+            celery_task_id=celery_task_id
         )
         
-        # Count total rows properly by parsing CSV (not just counting newlines)
-        # Some CSV rows have newlines within quoted fields, so we need to parse properly
-        import csv
-        import io
-        text_content = file_content.decode('utf-8', errors='ignore')
-        # Normalize line endings
-        text_content = text_content.replace('\r\n', '\n').replace('\r', '\n')
-        
-        # Auto-detect delimiter
-        first_line = text_content.split('\n')[0] if '\n' in text_content else text_content
-        delimiter = ',' if ',' in first_line else ('\t' if '\t' in first_line else ',')
-        
-        # Count rows by parsing CSV properly (handles quoted fields with newlines)
-        reader = csv.reader(io.StringIO(text_content), delimiter=delimiter)
-        row_count = sum(1 for row in reader)  # Count all rows including header
-        estimated_total = max(row_count - 1, 1)  # Subtract header row
-        
+        estimated_total = max(count_csv_rows(file_content), 1)
         update_progress(
             task_id,
             total_rows=estimated_total,
             message=f"Processing approximately {estimated_total} rows..."
         )
         
-        # Create database session (sync for Celery)
         db = SessionLocal()
-        
         try:
-            # OPTIMIZATION: Load all existing products into memory for fast lookup
-            # This avoids doing a database query for every row
             update_progress(task_id, message="Loading existing products...")
             existing_products = db.query(Product).all()
-            # Create a dictionary keyed by normalized SKU for O(1) lookup
             existing_by_sku = {normalize_sku(p.sku): p for p in existing_products}
             update_progress(task_id, message=f"Found {len(existing_by_sku)} existing products. Processing CSV...")
             
@@ -119,23 +114,19 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
             to_update = []
             actual_total = 0
             
-            # Process rows using streaming generator (memory efficient)
             for row_data in parse_csv_file_streaming(file_content):
                 actual_total += 1
                 
-                # Update total if we underestimated
                 if actual_total > estimated_total:
                     estimated_total = actual_total
                     update_progress(task_id, total_rows=estimated_total)
                 
                 try:
-                    # Validate row
                     is_valid, error_msg = validate_product_row(row_data)
                     if not is_valid:
                         failed_rows += 1
                         errors.append(f"Row {row_data['row_number']}: {error_msg}")
                         processed_rows += 1
-                        # Update progress periodically (not every row to avoid Redis overhead)
                         if processed_rows % 5 == 0 or processed_rows == estimated_total:
                             update_progress(
                                 task_id,
@@ -147,21 +138,16 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                             )
                         continue
                     
-                    # Normalize SKU for case-insensitive lookup
                     normalized_sku = normalize_sku(row_data['sku'])
-                    
-                    # Check if product exists using in-memory dictionary (O(1) lookup)
                     existing = existing_by_sku.get(normalized_sku)
                     
                     if existing:
-                        # Update existing product
                         existing.name = row_data['name']
-                        existing.sku = row_data['sku']  # Keep original case
+                        existing.sku = row_data['sku']
                         existing.description = row_data.get('description')
-                        existing.active = True  # Reactivate if it was inactive
+                        existing.active = True
                         to_update.append(existing)
                     else:
-                        # Create new product
                         new_product = Product(
                             name=row_data['name'],
                             sku=row_data['sku'],
@@ -169,25 +155,20 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                             active=True
                         )
                         to_create.append(new_product)
-                        # Add to lookup dict to avoid duplicates in same import
                         existing_by_sku[normalized_sku] = new_product
                     
                     successful_rows += 1
                     processed_rows += 1
                     
-                    # Commit in batches for better performance
                     if len(to_create) >= BATCH_SIZE:
                         db.add_all(to_create)
                         db.commit()
                         to_create = []
                     
                     if len(to_update) >= BATCH_SIZE:
-                        db.commit()  # Updates are already tracked by SQLAlchemy
+                        db.commit()
                         to_update = []
                     
-                    # Update progress efficiently - don't update every row for small files
-                    # Update every 5 rows for small files, every 10 for larger files
-                    # This reduces Redis writes and improves performance
                     update_interval = 5 if estimated_total < 100 else 10
                     if processed_rows % update_interval == 0 or processed_rows == actual_total:
                         update_progress(
@@ -196,7 +177,7 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                             successful_rows=successful_rows,
                             failed_rows=failed_rows,
                             total_rows=estimated_total,
-                            errors=errors[-10:] if errors else [],  # Keep last 10 errors
+                            errors=errors[-10:] if errors else [],
                             message=f"Processed {processed_rows}/{estimated_total} rows..."
                         )
                 
@@ -205,7 +186,6 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                     error_msg = f"Row {row_data.get('row_number', 'unknown')}: {str(e)}"
                     errors.append(error_msg)
                     processed_rows += 1
-                    # Update progress periodically (not every row to avoid Redis overhead)
                     if processed_rows % 5 == 0 or processed_rows == estimated_total:
                         update_progress(
                             task_id,
@@ -217,17 +197,14 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                         )
                     continue
             
-            # Update final total
             if actual_total != estimated_total:
                 update_progress(task_id, total_rows=actual_total)
             
-            # Commit remaining items
             if to_create:
                 db.add_all(to_create)
             if to_create or to_update:
                 db.commit()
             
-            # Final progress update
             update_progress(
                 task_id,
                 status="completed",
@@ -235,7 +212,7 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                 successful_rows=successful_rows,
                 failed_rows=failed_rows,
                 total_rows=actual_total,
-                errors=errors[-20:] if errors else [],  # Keep last 20 errors
+                errors=errors[-20:] if errors else [],
                 message=f"Import completed. {successful_rows} successful, {failed_rows} failed.",
                 progress=100.0,
                 completed_at=datetime.utcnow().isoformat()
@@ -253,7 +230,6 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
             db.close()
     
     except Exception as e:
-        # Update progress with error
         update_progress(
             task_id,
             status="failed",
@@ -263,3 +239,14 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
             errors=[str(e)]
         )
         raise
+
+
+@celery_app.task(bind=True, ignore_result=True)
+def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
+    """Celery task entrypoint."""
+    return _process_csv_import_core(task_id, file_content, filename, celery_task_id=self.request.id)
+
+
+def process_csv_import_inline(task_id: str, file_content: bytes, filename: str):
+    """Inline processing entrypoint (bypasses Celery)."""
+    return _process_csv_import_core(task_id, file_content, filename, celery_task_id=None)
