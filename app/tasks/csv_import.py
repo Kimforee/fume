@@ -21,8 +21,8 @@ if redis_url and "upstash.io" in redis_url:
         redis_url = redis_url.replace("redis://", "rediss://", 1)
 redis_client = redis.from_url(redis_url, decode_responses=True, ssl_cert_reqs=None)
 
-# Batch size for database operations - REDUCED to prevent crashes
-BATCH_SIZE = 50
+# Batch size for database operations
+BATCH_SIZE = 20  # Smaller batches = more frequent commits and progress updates
 
 
 def update_progress(task_id: str, **kwargs):
@@ -95,11 +95,20 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
         db = SessionLocal()
         
         try:
+            # OPTIMIZATION: Load all existing products into memory for fast lookup
+            # This avoids doing a database query for every row
+            update_progress(task_id, message="Loading existing products...")
+            existing_products = db.query(Product).all()
+            # Create a dictionary keyed by normalized SKU for O(1) lookup
+            existing_by_sku = {normalize_sku(p.sku): p for p in existing_products}
+            update_progress(task_id, message=f"Found {len(existing_by_sku)} existing products. Processing CSV...")
+            
             processed_rows = 0
             successful_rows = 0
             failed_rows = 0
             errors = []
-            batch = []
+            to_create = []
+            to_update = []
             actual_total = 0
             
             # Process rows using streaming generator (memory efficient)
@@ -118,15 +127,23 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                         failed_rows += 1
                         errors.append(f"Row {row_data['row_number']}: {error_msg}")
                         processed_rows += 1
+                        # Update progress immediately for small files
+                        if estimated_total < 100:
+                            update_progress(
+                                task_id,
+                                processed_rows=processed_rows,
+                                successful_rows=successful_rows,
+                                failed_rows=failed_rows,
+                                total_rows=estimated_total,
+                                message=f"Processed {processed_rows}/{estimated_total} rows..."
+                            )
                         continue
                     
                     # Normalize SKU for case-insensitive lookup
                     normalized_sku = normalize_sku(row_data['sku'])
                     
-                    # Check if product exists (case-insensitive)
-                    existing = db.query(Product).filter(
-                        func.lower(Product.sku) == normalized_sku
-                    ).first()
+                    # Check if product exists using in-memory dictionary (O(1) lookup)
+                    existing = existing_by_sku.get(normalized_sku)
                     
                     if existing:
                         # Update existing product
@@ -134,7 +151,7 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                         existing.sku = row_data['sku']  # Keep original case
                         existing.description = row_data.get('description')
                         existing.active = True  # Reactivate if it was inactive
-                        batch.append(existing)
+                        to_update.append(existing)
                     else:
                         # Create new product
                         new_product = Product(
@@ -143,17 +160,22 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                             description=row_data.get('description'),
                             active=True
                         )
-                        batch.append(new_product)
+                        to_create.append(new_product)
+                        # Add to lookup dict to avoid duplicates in same import
+                        existing_by_sku[normalized_sku] = new_product
                     
                     successful_rows += 1
-                    
-                    # Commit batch when it reaches BATCH_SIZE (reduced to 50)
-                    if len(batch) >= BATCH_SIZE:
-                        db.add_all(batch)
-                        db.commit()
-                        batch = []
-                    
                     processed_rows += 1
+                    
+                    # Commit in batches for better performance
+                    if len(to_create) >= BATCH_SIZE:
+                        db.add_all(to_create)
+                        db.commit()
+                        to_create = []
+                    
+                    if len(to_update) >= BATCH_SIZE:
+                        db.commit()  # Updates are already tracked by SQLAlchemy
+                        to_update = []
                     
                     # Update progress more frequently for better UX
                     # For small files (< 100 rows), update every row
@@ -175,15 +197,26 @@ def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
                     error_msg = f"Row {row_data.get('row_number', 'unknown')}: {str(e)}"
                     errors.append(error_msg)
                     processed_rows += 1
+                    # Update progress immediately for small files
+                    if estimated_total < 100:
+                        update_progress(
+                            task_id,
+                            processed_rows=processed_rows,
+                            successful_rows=successful_rows,
+                            failed_rows=failed_rows,
+                            total_rows=estimated_total,
+                            message=f"Processed {processed_rows}/{estimated_total} rows..."
+                        )
                     continue
             
             # Update final total
             if actual_total != estimated_total:
                 update_progress(task_id, total_rows=actual_total)
             
-            # Commit remaining batch
-            if batch:
-                db.add_all(batch)
+            # Commit remaining items
+            if to_create:
+                db.add_all(to_create)
+            if to_create or to_update:
                 db.commit()
             
             # Final progress update

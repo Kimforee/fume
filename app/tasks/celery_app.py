@@ -93,16 +93,9 @@ config_updates = {
 # Add SSL options if needed (Celery passes this to Kombu's Connection as ssl={...})
 if ssl_options:
     config_updates['broker_use_ssl'] = ssl_options
-    # Result backend also needs SSL - configure it via result_backend_transport_options
-    # Celery's Redis backend will use these SSL options from transport_options
+    # Result backend also needs SSL - Celery uses redis_backend_use_ssl
     if "upstash.io" in celery_result_backend:
-        result_backend_transport_options.update({
-            'ssl_cert_reqs': CERT_NONE,
-            'ssl_ca_certs': None,
-            'ssl_certfile': None,
-            'ssl_keyfile': None,
-        })
-        config_updates['result_backend_transport_options'] = result_backend_transport_options
+        config_updates['redis_backend_use_ssl'] = ssl_options
 
 celery_app.conf.update(**config_updates)
 
