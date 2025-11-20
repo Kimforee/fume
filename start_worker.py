@@ -41,22 +41,32 @@ def main():
         "--without-heartbeat"  # Disable heartbeat to reduce network overhead
     ]
     
-    # Run Celery worker - it will retry connections automatically
-    # Capture stderr to see what's causing the crash
-    result = subprocess.run(
+    # Run Celery worker - output directly to stdout/stderr so Cloud Run captures it
+    # Don't buffer output - we need to see errors immediately
+    import sys
+    sys.stdout.flush()
+    sys.stderr.flush()
+    
+    # Run worker with unbuffered output
+    # Use Popen so we can stream output in real-time
+    import subprocess
+    process = subprocess.Popen(
         celery_cmd,
-        stderr=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        text=True
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        bufsize=0,  # Unbuffered
+        env=os.environ.copy()
     )
-    if result.returncode != 0:
-        print(f"Celery worker exited with code {result.returncode}")
-        print("STDOUT:", result.stdout[-500:] if result.stdout else "(empty)")
-        print("STDERR:", result.stderr[-500:] if result.stderr else "(empty)")
+    
+    # Wait for process to complete
+    returncode = process.wait()
+    if returncode != 0:
+        print(f"ERROR: Celery worker exited with code {returncode}", file=sys.stderr)
+        sys.stderr.flush()
         # Sleep a bit before exiting to allow health check to respond
         import time
         time.sleep(5)
-    sys.exit(result.returncode)
+    sys.exit(returncode)
 
 if __name__ == "__main__":
     main()
