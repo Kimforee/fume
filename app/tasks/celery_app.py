@@ -33,9 +33,31 @@ celery_app = Celery(
 )
 
 # Celery configuration
+broker_transport_options = {}
+result_backend_transport_options = {}
+
+# Configure SSL for Upstash Redis
+if "upstash.io" in celery_broker_url:
+    broker_transport_options = {
+        'ssl_cert_reqs': None,  # Upstash uses self-signed certs
+        'ssl_ca_certs': None,
+        'ssl_certfile': None,
+        'ssl_keyfile': None,
+    }
+
+if "upstash.io" in celery_result_backend:
+    result_backend_transport_options = {
+        'ssl_cert_reqs': None,  # Upstash uses self-signed certs
+        'ssl_ca_certs': None,
+        'ssl_certfile': None,
+        'ssl_keyfile': None,
+    }
+
 celery_app.conf.update(
     broker_url=celery_broker_url,  # Explicitly set the converted URL
     result_backend=celery_result_backend,  # Explicitly set the converted URL
+    broker_transport_options=broker_transport_options,
+    result_backend_transport_options=result_backend_transport_options,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",

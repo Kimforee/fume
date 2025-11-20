@@ -14,7 +14,12 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 # Redis connection for progress tracking
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis_client = redis.from_url(redis_url, decode_responses=True)
+# Convert to TLS for Upstash
+if redis_url and "upstash.io" in redis_url:
+    redis_url = redis_url.rstrip('/').rstrip('/0').rstrip('/1').rstrip('/2')
+    if redis_url.startswith("redis://"):
+        redis_url = redis_url.replace("redis://", "rediss://", 1)
+redis_client = redis.from_url(redis_url, decode_responses=True, ssl_cert_reqs=None)
 
 
 @router.get("/{task_id}/progress", response_model=TaskProgressResponse)
