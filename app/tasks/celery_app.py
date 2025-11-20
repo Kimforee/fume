@@ -8,6 +8,18 @@ load_dotenv()
 celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
+# Upstash Redis requires TLS - convert redis:// to rediss:// if needed
+# Most Upstash instances work with redis:// but if you get SSL errors, use rediss://
+if celery_broker_url.startswith("redis://") and "upstash.io" in celery_broker_url:
+    # Upstash works with redis:// but if SSL errors occur, uncomment below:
+    # celery_broker_url = celery_broker_url.replace("redis://", "rediss://", 1)
+    pass
+
+if celery_result_backend.startswith("redis://") and "upstash.io" in celery_result_backend:
+    # Upstash works with redis:// but if SSL errors occur, uncomment below:
+    # celery_result_backend = celery_result_backend.replace("redis://", "rediss://", 1)
+    pass
+
 celery_app = Celery(
     "product_importer",
     broker=celery_broker_url,
