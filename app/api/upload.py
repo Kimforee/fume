@@ -80,7 +80,32 @@ async def upload_csv(
     
     # Enqueue processing task (all heavy work happens in Celery worker)
     # This returns immediately, avoiding timeout issues
-    process_csv_file.delay(task_id, content, file.filename)
+    # Wrap in try/except to handle result backend connection issues gracefully
+    # The task will still be enqueued even if result tracking fails
+    try:
+        process_csv_file.delay(task_id, content, file.filename)
+    except Exception as e:
+        # If result backend fails, log but don't fail the request
+        # The task might still be enqueued to the broker
+        # Update progress to indicate potential issue
+        import logging
+        logging.error(f"Failed to enqueue task with result tracking: {str(e)}")
+        # Try to enqueue without result tracking by using apply_async with ignore_result
+        try:
+            process_csv_file.apply_async(
+                args=(task_id, content, file.filename),
+                ignore_result=True
+            )
+        except Exception as e2:
+            # If this also fails, update progress to show error
+            error_progress = initial_progress.copy()
+            error_progress["status"] = "failed"
+            error_progress["message"] = f"Failed to enqueue task: {str(e2)}"
+            redis_client.setex(progress_key, 3600, json.dumps(error_progress))
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to start processing. Please try again."
+            )
     
     return UploadResponse(
         task_id=task_id,

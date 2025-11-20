@@ -68,6 +68,8 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=1000,
     broker_connection_retry_on_startup=True,  # Retry connection on startup
+    result_backend_always_retry=True,  # Retry result backend connections
+    result_backend_max_retries=3,  # Limit retries for result backend
 )
 
 # Import tasks to register them
