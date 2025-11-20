@@ -57,7 +57,7 @@ def update_progress(task_id: str, **kwargs):
     redis_client.setex(progress_key, 3600, json.dumps(progress))  # Expire after 1 hour
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, ignore_result=True)
 def process_csv_import(self, task_id: str, file_content: bytes, filename: str):
     """
     Process CSV file import asynchronously using streaming to avoid memory issues.

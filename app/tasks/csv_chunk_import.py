@@ -69,7 +69,7 @@ def check_cancelled(task_id: str) -> bool:
     return False
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(bind=True, max_retries=3, ignore_result=True)
 def process_chunk_task(self, task_id: str, chunk_data: List[Dict], column_mapping: Dict[str, str], chunk_number: int):
     """
     Process a single chunk of CSV data using fast bulk insert.
